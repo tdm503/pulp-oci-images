@@ -1,0 +1,37 @@
+# Use alongside compose.yml: docker compose -f compose.yml -f compose.s3.yml up -d
+# Overrides the settings bind mount and injects S3 credentials into Pulp services.
+x-s3-environment: &s3_environment
+  env_file:
+    - .env.s3
+
+x-s3-settings: &s3_settings
+  type: bind
+  source: ./assets/settings.s3.py
+  target: /etc/pulp/settings.py
+  read_only: true
+
+services:
+  pulp_api:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
+  pulp_content:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
+  pulp_worker:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
+  migration_service:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
+  signing_key_service:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
+  set_init_password_service:
+    <<: *s3_environment
+    volumes:
+      - *s3_settings
