@@ -3,3 +3,6 @@ containers/
 pgsql/
 pulp_storage/
 s6-overlay-amd64.tar.gz
+
+# Local AWS credentials for Pulp Compose
+images/compose/.env.s3
