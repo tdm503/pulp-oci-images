@@ -1,0 +1,77 @@
+# Ubuntu 24.04 alternative to images/Containerfile.core.base
+# Experimental: validated against the original file structure, not yet built end-to-end.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    PYTHONUNBUFFERED=0 \
+    DJANGO_SETTINGS_MODULE=pulpcore.app.settings \
+    PULP_SETTINGS=/etc/pulp/settings.py \
+    _BUILDAH_STARTED_IN_USERNS="" \
+    BUILDAH_ISOLATION=chroot \
+    PULP_GUNICORN_TIMEOUT=90 \
+    PULP_API_WORKERS=2 \
+    PULP_API_WORKERS_MAX_REQUESTS=0 \
+    PULP_API_WORKERS_MAX_REQUESTS_JITTER=0 \
+    PULP_CONTENT_WORKERS=2 \
+    PULP_CONTENT_WORKERS_MAX_REQUESTS=0 \
+    PULP_CONTENT_WORKERS_MAX_REQUESTS_JITTER=0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      locales ca-certificates curl wget git \
+      python3 python3-pip python3-dev python3-venv \
+      openssl libssl-dev libldap2-dev libsasl2-dev libffi-dev \
+      libpq-dev libxml2-dev libxslt1-dev \
+      build-essential gcc pkg-config \
+      podman buildah skopeo fuse-overlayfs uidmap \
+      sudo jq zstd xz-utils lsof rpm gnupg \
+    && locale-gen en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+
+# The GHCR UV image is intentionally retained (confirmed accessible in user's network).
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /uvx /bin/
+ENV UV_SYSTEM_PYTHON=1
+
+RUN groupadd --system --gid 700 pulp \
+ && useradd --system --uid 700 --gid pulp --home-dir /var/lib/pulp --shell /bin/bash pulp \
+ && usermod --add-subuids 10000-75534 --add-subgids 10000-75534 pulp
+
+# Debian/Ubuntu containers/storage package placement may differ from CentOS.
+RUN if [ -f /usr/share/containers/storage.conf ]; then \
+      sed -i 's|^#mount_program|mount_program|g' /usr/share/containers/storage.conf; \
+    fi
+
+VOLUME /var/lib/containers
+RUN mkdir -p /var/lib/pulp/.local/share/containers \
+ && chown -R pulp:pulp /var/lib/pulp/.local
+VOLUME /var/lib/pulp/.local/share/containers
+
+RUN mkdir -p /database \
+             /etc/nginx/pulp \
+             /etc/pulp/certs \
+             /etc/ssl/pulp \
+             /nginx \
+             /var/lib/operator/static \
+             /var/lib/pgsql \
+             /var/lib/pulp/assets \
+             /var/lib/pulp/media \
+             /var/lib/pulp/scripts \
+             /var/lib/pulp/tmp \
+ && chown -R pulp:pulp /database /var/lib/pulp /var/lib/operator/static
+
+COPY images/assets/readyz.py /usr/bin/readyz.py
+COPY images/assets/route_paths.py /usr/bin/route_paths.py
+COPY images/assets/wait_on_postgres.py /usr/bin/wait_on_postgres.py
+COPY images/assets/wait_on_database_migrations.sh /usr/bin/wait_on_database_migrations.sh
+COPY images/assets/set_init_password.sh /usr/bin/set_init_password.sh
+COPY images/assets/add_signing_service.sh /usr/bin/add_signing_service.sh
+COPY images/assets/pulp-api /usr/bin/pulp-api
+COPY images/assets/pulp-content /usr/bin/pulp-content
+COPY images/assets/pulp-worker /usr/bin/pulp-worker
+COPY images/assets/constraints.txt /constraints.txt
+
+RUN touch /var/log/galaxy_api_access.log \
+ && chown pulp:pulp /var/log/galaxy_api_access.log \
+ && chmod u+rw /var/log/galaxy_api_access.log
